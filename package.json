@@ -1,0 +1,37 @@
+{
+	"name": "inbox-compass",
+	"version": "0.2.0",
+	"private": true,
+	"type": "module",
+	"description": "Single-owner Cloudflare Worker: every morning, reads several Gmail / Google Workspace inboxes and builds an action list with an open-weight model on Workers AI. No third-party AI provider.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/maxmentico/inbox-compass.git"
+	},
+	"homepage": "https://github.com/maxmentico/inbox-compass#readme",
+	"bugs": "https://github.com/maxmentico/inbox-compass/issues",
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"check": "npm run type-check && npm test",
+		"type-check": "tsc --noEmit",
+		"test": "vitest run",
+		"test:coordinator-runtime": "node scripts/test-coordinator-suite.mjs",
+		"ui:snapshots": "vitest run --config vitest.snapshots.config.ts",
+		"ui:geometry": "node scripts/run-geometry.mjs"
+	},
+	"dependencies": {
+		"hono": "^4.13.19",
+		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20261019.1",
+		"typescript": "6.0.3",
+		"vitest": "^5.1.0",
+		"wrangler": "^4.164.0"
+	}
+}

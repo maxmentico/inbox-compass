@@ -1,0 +1,17 @@
+# Copy to .dev.vars for local development, or pass the copy to
+# `wrangler deploy --secrets-file .dev.vars`. Never commit .dev.vars.
+#
+# Create your own Google OAuth Web client. Never use or publish another
+# installation's client secret.
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+
+# Generate with:
+# node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+TOKEN_ENCRYPTION_KEY=paste-a-new-random-value-here
+
+# Only this verified Google identity can sign in to this installation.
+OWNER_EMAIL=you@example.com
+
+# Optional. Set after the first deploy if you enable digest email delivery.
+# APP_URL=https://inbox-compass.your-workers-subdomain.workers.dev

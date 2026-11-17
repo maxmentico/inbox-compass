@@ -1,0 +1,31 @@
+# Atomic publication decision record
+
+Status: proposed; **not implemented or approved for cutover**. Audit date: 2026-11-14.
+
+## Decision
+
+Use the existing SQLite job-authority object as the single authority for both job fencing and a versioned, immutable generation. Stage bounded, integrity-checked segments before commit. A short SQLite transaction must check the live finalizer attempt, accepted mailbox attempts, parent head, source completeness, mailbox link epochs and owner-edit revisions, record the outcome, and move the sole active head. Gmail and Workers AI remain in ordinary Worker invocations. No model receives tools. Credentials remain outside generation data. The transaction cannot perform network I/O or build a full run.
+
+Readers acquire a durable pin to a specific committed head before reading any generation-dependent state; all subsequent reads use that head, even after a newer commit. Pins have bounded lifetimes and cleanup must preserve their reachable segments. A reader unable to finish within its pin must restart the entire logical read, not mix heads. Generation overlays need bounded ancestry, incremental compaction and a complete inventory proof before an ancestor can be reclaimed. Attempts and preparations have unique identities and idempotent outcomes; a stale finalizer has no authority to mutate a head or any visible record.
+
+Authoritative data comprises digest contents and IDs, last-run, job result/done and accepted partial references, run index and tombstones, cursors and failure holds, classification/seen entries and associated recheck records, history used for classification, mailbox link identity epochs, and the settings and done revisions used by assembly. Owner edits must themselves be serialized with publication and consistently visible to readers; relink/unlink must fence old attempts. Test-run checked state needs the same identity protection or must be omitted. A cache is derived only if losing or delaying it cannot change visible output or cause mail to be skipped; any projection must be generation-tagged and validated against the head. Telemetry is non-authoritative. Token storage and sessions are separate from published generation data.
+
+Existing experimental modules are research material, not the production adapter. In particular, the synthetic unified reader returns `changed` on a head flip; it does not provide the required pinned-reader guarantee. Opaque segment completeness is not a domain proof. The current production `writeAssembly` writes the digest, last-run, recheck, classifications, history and cursors separately to KV, while `finishJob` writes result and done separately. Renewing a lease before those writes cannot fence an already paused writer. The real web and run paths still read KV. No subset of these components is accepted for integration without independent tests of its actual contract.
+
+## Budgets and evidence
+
+Initial engineering ceilings, subject to measurement and tightening: 128 KiB encoded segment/request payload, 16 segments or rows per cleanup transaction, at most 32 SQL parameters per statement, and a bounded amount of decoding/serialization per request. Enforce byte and count limits on inputs, SQL work and outputs, not merely nominal message counts. Do not assemble a whole run or a large value in one JSON object. Measure peak retained bytes, SQL rows read/written, maximum row and request sizes, Worker and DO CPU where available, wall time, external and internal subrequests, storage high-water mark, and cleanup progress for the specified 500-message Unicode/5,000-history workload, retries and retained generations. Require substantial headroom under the actual account plan and Cloudflare's current limits; a local runtime measurement alone does not establish deployed CPU or quota compliance. Reject or defer work safely when a bound is reached, without advancing a cursor or head.
+
+## Cutover and rollback
+
+First deploy and verify a backwards-compatible bridge that retains the DO class and migration, records all admitted writes and their outcomes, and gates every relevant writer, including cron, browser and internal jobs, test jobs, owner edits, link changes and read-triggered repairs. Establish a defensible drain protocol for operations admitted by the currently deployed binary, which does not participate in that journal; a missing KV lock or elapsed time is not proof. Until that is solved and tested, activation is blocked.
+
+Behind a verified write barrier, import in bounded pages, preserve absolute expiry, metadata, tombstones and IDs, reconcile against a complete baseline and the bridge journal, and verify identities and revision high-water marks. KV's eventually consistent reads and listing alone cannot establish that baseline. Switch authority, head and admission epoch atomically only after verification. A retry must recover the committed result and must not replay Gmail or email side effects.
+
+Retain a tested compatibility release that continues to use DO authority after code rollback; never reactivate the legacy KV writer. Reverse migration to KV, if ever required, is a separate frozen, reconciled epoch transition, not a code rollback. Rehearse both recovery and rollback after post-cutover edits on isolated synthetic bindings before activation.
+
+## Release KPIs
+
+All specified release gates are mandatory: at least 50 simultaneous real-path starts with one admission; stale attempt and paused-finalizer exclusion; faults before and after every publication boundary; pinned old/new readers; bounded large-workload and retention measurements; restart, owner revision/relink, cron takeover, migration and rollback tests using production adapters; full tests, type check, diff check, runtime tests, bundle dry-run, security review and anonymous production smoke. Record exact measurements and evidence. Owner-only authenticated mailbox verification is separate and must not be performed by an agent. Do not deploy a generation implementation until every gate passes.
+
+References: [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [Durable Objects limits](https://developers.cloudflare.com/durable-objects/platform/limits/), [KV consistency](https://developers.cloudflare.com/kv/concepts/how-kv-works/).

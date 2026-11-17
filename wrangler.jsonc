@@ -1,0 +1,62 @@
+/**
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ * Secrets are not in this file: set them with `wrangler secret put` (see README).
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "inbox-digest",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": ["nodejs_compat", "enable_ctx_exports"],
+
+	// Wrangler provisions a private namespace in each deployer's Cloudflare account.
+	"kv_namespaces": [{ "binding": "MAILBOX_KV" }],
+
+	// Workers AI. Inference runs on Cloudflare.
+	"ai": { "binding": "AI" },
+
+	"durable_objects": {
+		"bindings": [{ "name": "JOB_AUTHORITY", "class_name": "InboxJobAuthority" }]
+	},
+	"migrations": [{ "tag": "job-authority-v1", "new_sqlite_classes": ["InboxJobAuthority"] }],
+
+	// The morning run uses ctx.exports to call this Worker one mailbox per invocation. This avoids a
+	// deployment-specific self-service binding and lets forks choose any Worker name.
+
+	// Cron runs in UTC. 06:30 UTC = 06:30 London in winter, 07:30 in summer.
+	"triggers": { "crons": ["30 6 * * *"] },
+
+	// Workers Paid only. Raises CPU time per invocation (default 30 s on Paid) for big runs.
+	// "limits": { "cpu_ms": 60000 },
+
+	// Optional: email the digest to yourself. Needs Email Routing on a domain in this Cloudflare
+	// account, with destination_address verified there. Then set DIGEST_EMAIL_FROM / _TO below.
+	// "send_email": [{ "name": "DIGEST_EMAIL", "destination_address": "you@example.com" }],
+
+	"vars": {
+		"ENABLE_MARK_READ": "true",
+		"DIGEST_QUERY": "in:inbox",
+		"DIGEST_MAX_PER_ACCOUNT": "300",
+		// Cloudflare-hosted ids only ("@cf/..."); anything else is ignored in favour of the default.
+		"DIGEST_MODEL": "@cf/openai/gpt-oss-120b",
+		// Retried for whatever the primary fails on. "none" to disable.
+		"DIGEST_FALLBACK_MODEL": "@cf/google/gemma-4-26b-a4b-it",
+		"DIGEST_TIMEZONE": "Europe/London",
+		// Bridge is KV-compatible until a verified SQLite head exists; after cutover it follows that head.
+		"ATOMIC_STATE_MODE": "active",
+		"DIGEST_EMAIL_FROM": "",
+		"DIGEST_EMAIL_TO": ""
+	},
+
+	// Values come from each deployer's own Google project and are never committed to this repo.
+	"secrets": {
+		"required": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "TOKEN_ENCRYPTION_KEY", "OWNER_EMAIL"]
+	},
+
+	// Serve only on the workers.dev URL; no per-version preview hosts.
+	"workers_dev": true,
+	"preview_urls": false,
+
+	"observability": { "enabled": true },
+	"dev": { "port": 8788 }
+}
