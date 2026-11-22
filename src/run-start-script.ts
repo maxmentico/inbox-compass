@@ -48,7 +48,7 @@ export const RUN_START_SCRIPT = `(function () {
   }
 
   // Other forms (including test runs) retain their ordinary POST/redirect flow.
-  Array.prototype.forEach.call(document.querySelectorAll('form[action="/app/run"]'), function (form) {
+  Array.prototype.forEach.call(document.querySelectorAll('form[action="/app/run"], form[action="/app/run/prepare"]'), function (form) {
     form.addEventListener("submit", function (event) {
       if (event.defaultPrevented || form.dataset.starting === "1") return;
       form.dataset.starting = "1";
@@ -67,4 +67,4 @@ export const RUN_START_SCRIPT = `(function () {
 })();`;
 
 /** Both scripts are admitted by their exact SHA-256 hashes in the CSP. */
-export const RUN_START_SCRIPT_HASH = "sha256-nN1r7CvC3wd6N8P1mOb0KwCFxyM9HBIBg7f4NCCeur8=";
+export const RUN_START_SCRIPT_HASH = "sha256-Z2LQOXh+ZHMUhvfF9oFY5z2TRp4RLXK5QZA3DPWYd5A=";
