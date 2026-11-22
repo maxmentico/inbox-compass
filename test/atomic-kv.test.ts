@@ -1,9 +1,16 @@
+// @ts-expect-error Vitest runs in Node; the Worker project intentionally excludes Node typings.
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { pinAtomicState, withAtomicState } from "../src/atomic-kv";
 
 const json = (value: unknown) => Promise.resolve(Response.json(value));
 
 describe("atomic KV bulk reads", () => {
+	it("keeps the default deployment on the compatibility bridge until cutover is verified", () => {
+		const config = readFileSync("wrangler.jsonc", "utf8");
+		expect(config).toMatch(/"ATOMIC_STATE_MODE"\s*:\s*"bridge"/);
+	});
+
 	it("uses one authority request for a 100-key bulk read", async () => {
 		const requests: string[] = [];
 		const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
