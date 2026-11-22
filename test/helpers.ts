@@ -69,6 +69,7 @@ export type FakeAi = { run: ReturnType<typeof import("vitest").vi.fn> };
 export function makeEnv(overrides: Partial<Env> = {}): Env & { MAILBOX_KV: ReturnType<typeof memoryKV> } {
 	return {
 		MAILBOX_KV: memoryKV(),
+		LOGIN_RATE_LIMITER: { limit: async () => ({ success: true }) } as RateLimit,
 		AI: { run: async () => ({}) } as unknown as Ai,
 		GOOGLE_CLIENT_ID: "cid",
 		GOOGLE_CLIENT_SECRET: "secret",
