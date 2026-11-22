@@ -108,6 +108,16 @@ app.get("/", async (c) => {
 });
 
 app.get("/login", async (c) => {
+	// Cloudflare sets this header at the edge. Never trust caller-controlled X-Forwarded-For.
+	// In local development without an edge IP, use one shared bucket rather than bypassing the limit.
+	const ip = c.req.header("CF-Connecting-IP")?.trim() || "unknown";
+	const { success } = await c.env.LOGIN_RATE_LIMITER.limit({ key: `login:${ip}` });
+	if (!success) {
+		return new Response("Too many sign-in attempts. Try again shortly.", {
+			status: 429,
+			headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "Retry-After": "60" },
+		});
+	}
 	const { state, setCookie } = await startFlow(c.env.MAILBOX_KV, { kind: "login" });
 	const location = buildAuthorizeUrl({
 		clientId: c.env.GOOGLE_CLIENT_ID,
