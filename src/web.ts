@@ -498,7 +498,7 @@ function runLabel(id: string, view: View): string {
 }
 
 const runNowForm = (session: Session, primary: boolean) =>
-	`<form method="post" action="/app/run">${hiddenCsrf(session)}<button${primary ? ' class="primary"' : ""} type="submit">Run now</button></form>`;
+	`<form method="post" action="/app/run/prepare">${hiddenCsrf(session)}<button${primary ? ' class="primary"' : ""} type="submit">Run now</button></form>`;
 
 function digestHead(d: Digest, session: Session, view: View): string {
 	return `<div class="head"><div><p class="eyebrow mono">${escapeHtml(runLabel(d.id, view))}</p><h1>${escapeHtml(windowTitle(d, view.done))}</h1><p class="sub">${escapeHtml(windowSub(d, view))}</p></div>
@@ -918,23 +918,43 @@ function runningNotice(lock: LockHolder | null, timeZone: string): string {
 	return noticesHtml([`<p>A run is in progress${when ? ` (started ${escapeHtml(when)})` : ""}. ${link}</p>`], "info");
 }
 
-// Run now (or a test run) starts a job and goes to its page, which steps it one mailbox at a time.
+// Run now first opens this lightweight page. CSRF was checked by owner middleware.
+// Job creation deliberately happens only in the next POST, not in the background
+// after a response (which could be terminated before completing).
+app.post("/app/run/prepare", (c) =>
+	page("Building your digest",
+		`<p class="eyebrow mono">Run now</p><h1>Building your digest</h1>
+<p class="lede" id="run-start-status" role="status">Preparing your run…</p>
+<p class="note">Connecting to your mailboxes. The progress list will open automatically.</p>
+<form id="run-start-form" method="post" action="/app/run" class="actions">${hiddenCsrf(c.get("session"))}
+<button type="submit" class="btn primary">Start run</button></form>
+<p class="note">If this page cannot start automatically, press Start run.</p>`,
+		{ solo: true, bar: WORDMARK_BAR, runStartScript: true }),
+);
+
+// StartJob remains authoritative for the existing lock, snapshot and durable job.
+// JSON is requested only by the preflight screen; ordinary forms retain redirects.
 app.post("/app/run", async (c) => {
+	const json = c.req.header("Accept")?.split(",").some((x) => x.trim().startsWith("application/json")) === true;
+	if (json) c.header("Cache-Control", "no-store");
 	const options = runOptions(await c.req.raw.formData());
 	if (!options) {
+		if (json) return c.json({ ok: false, error: "Invalid run options." }, 400);
 		return errorPage(
 			`Test run: pick a window and a whole number N up to ${TEST_LIMITS.hours} hours, ${TEST_LIMITS.days} days or ${TEST_LIMITS.emails} emails.`,
 		);
 	}
 	try {
 		const job = await startJob(c.env, options, clock.now(), "web");
-		return redirect(jobUrl(job.id));
+		return json ? c.json({ ok: true, url: jobUrl(job.id) }) : redirect(jobUrl(job.id));
 	} catch (e) {
 		if (!(e instanceof RunInProgressError)) {
 			console.error("run now failed", (e as Error).message);
+			if (json) return c.json({ ok: false, error: "Could not start the run." }, 500);
 			return runFailedPage((e as Error).message, options.test ? "Test run" : "Run now");
 		}
 		const holder = e.holder;
+		if (json) return c.json({ ok: false, code: "in_progress", url: holder?.job ? jobUrl(holder.job) : null }, 409);
 		// Another run holds the lock: offer to continue it (or watch the morning run) rather than fail.
 		const go = holder?.job
 			? `<a class="btn primary" href="${escapeHtml(jobUrl(holder.job))}">${holder.driver === "cron" ? "Watch it" : "Continue it"}</a>`
