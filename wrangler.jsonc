@@ -12,6 +12,10 @@
 	// Wrangler provisions a private namespace in each deployer's Cloudflare account.
 	"kv_namespaces": [{ "binding": "MAILBOX_KV" }],
 
+	// Limit unauthenticated OAuth starts before allocating KV flow state. Counters are
+	// approximate and local to a Cloudflare location, not a global security boundary.
+	"ratelimits": [{ "name": "LOGIN_RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
+
 	// Workers AI. Inference runs on Cloudflare.
 	"ai": { "binding": "AI" },
 
