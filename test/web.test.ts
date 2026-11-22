@@ -353,7 +353,7 @@ describe("web app", () => {
 		expect(one.headers.get("Cache-Control")).toBe("no-store");
 		const started = await one.json() as { ok: boolean; url: string };
 		expect(started.ok).toBe(true);
-		expect(started.url).toMatch(/^\\/app\\/run\\/[A-Za-z0-9_-]{22}$/);
+		expect(started.url).toMatch(/^\/app\/run\/[A-Za-z0-9_-]{22}$/);
 		const second = await run();
 		expect(second.status).toBe(409);
 		expect(await second.json()).toEqual({ ok: false, code: "in_progress", url: started.url });
