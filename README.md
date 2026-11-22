@@ -10,7 +10,7 @@ by email.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/maxmentico/inbox-compass)
 
-**New to Cloudflare or Google OAuth?** Follow the step-by-step
+**Explore without linking Gmail:** open the [interactive six-mailbox demo](demo/index.html) in a browser.\nIt runs entirely on invented messages and makes no network requests. See [architecture](ARCHITECTURE.md) for the trust boundaries and design decisions.\n\n**New to Cloudflare or Google OAuth?** Follow the step-by-step
 [first inbox guide](docs/getting-started.md). It starts with an empty account and ends with a real
 digest; no maintainer credentials are needed.
 

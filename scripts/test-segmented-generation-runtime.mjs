@@ -1,5 +1,6 @@
 // Synthetic, local-only integration. Semantic proof and source authorization are fixed stubs.
 import {strict as assert} from 'node:assert';import{createHash,randomBytes}from'node:crypto';import{mkdtemp,rm,writeFile}from'node:fs/promises';import{tmpdir}from'node:os';import{join,resolve}from'node:path';import{spawn,execFileSync}from'node:child_process';import{readFile}from'node:fs/promises';import{setTimeout as delay}from'node:timers/promises';
+import { build } from 'vite';
 const dir=await mkdtemp(join(tmpdir(),'segment-generation-')),port=20000+process.pid%20000,base=`http://127.0.0.1:${port}`,id=()=>randomBytes(16).toString('base64url');
 await writeFile(join(dir,'entry.ts'),`import{JobStateCore}from ${JSON.stringify(resolve('src/job-state-core.ts'))};import{SegmentedOutputStore}from ${JSON.stringify(resolve('src/segmented-output-store.ts'))};import{SegmentedGeneration}from ${JSON.stringify(resolve('src/segmented-generation.ts'))};
 export class T{constructor(state){this.sql=state.storage.sql;this.sql.exec('CREATE TABLE IF NOT EXISTS gen_versions (key TEXT PRIMARY KEY,version INTEGER NOT NULL)');this.sql.exec('CREATE TABLE IF NOT EXISTS synthetic_proof (ok INTEGER NOT NULL)');const auth=(sql,job,generation,attempt,source)=>{const r=sql.exec("SELECT j.expires,f.deadline FROM core_jobs j JOIN core_final f ON f.job=j.job JOIN core_active a ON a.singleton=1 AND a.job=j.job WHERE j.job=? AND j.generation=? AND f.token=? AND j.state='running'",job,generation,attempt).toArray()[0];return !!r&&r.expires>Date.now()&&r.deadline>Date.now()&&source==='a'.repeat(64);};this.transport=new SegmentedOutputStore(state.storage,auth);this.generation=new SegmentedGeneration(state.storage,auth,sql=>sql.exec('SELECT ok FROM synthetic_proof').toArray()[0]?.ok===1);this.bad=new JobStateCore(state.storage,new SegmentedGeneration(state.storage,auth,async()=>true).atomicCommit());this.core=new JobStateCore(state.storage,this.generation.atomicCommit());}
@@ -20,7 +21,16 @@ try{await start();await call('version',{key:'settings',value:1});await call('ver
  const revised={...second,scope:id()},newVersions=[{key:'settings',version:1},{key:'done',version:2}];await stage(revised,payload,ops,first.scope,digest,newVersions);await assert.rejects(call('badCommit',{...revised,digest}));assert.equal(await call('head',{}),first.scope);assert.equal(await call('commit',{...revised,digest}),true);assert.equal(await call('commit',{...revised,digest}),true);
  await stop();await start();assert.equal(await call('head',{}),revised.scope);assert.equal((await call('read',{head:revised.scope,key:'kept',offset:0})).kind,'value');assert.equal((await call('read',{head:first.scope,key:'kept',offset:0})).kind,'changed');
  const h=createHash('sha256');let offset=0;while(true){const r=await call('read',{head:revised.scope,key:'digest:second',offset});assert.equal(r.kind,'value');h.update(Buffer.from(r.bytes,'base64'));if(r.next===null)break;offset=r.next;}assert.equal(h.digest('hex'),createHash('sha256').update(doc).digest('hex'));assert.equal(Buffer.from((await call('read',{head:revised.scope,key:'cursor:mail',offset:0})).bytes,'base64').toString(),'x');
- const fixturePath=join(dir,'large-reference.json');execFileSync(resolve('node_modules/.bin/vite-node'),[resolve('scripts/coordinator-canary/generate-large-reference.ts'),fixturePath],{stdio:'pipe'});
+ const fixturePath=join(dir,'large-reference.json');
+// Vitest 5 no longer supplies the vite-node executable. Bundle this one-off TypeScript
+// fixture with the already installed Vite SSR builder instead of relying on an undeclared CLI.
+const fixtureBundle=resolve('.wrangler/synthetic-reference-fixture');
+await build({configFile:false,logLevel:'error',build:{
+  ssr:resolve('scripts/coordinator-canary/generate-large-reference.ts'),
+  outDir:fixtureBundle,emptyOutDir:true,
+  rollupOptions:{output:{entryFileNames:'fixture.mjs'}}
+}});
+execFileSync(process.execPath,[join(fixtureBundle,'fixture.mjs'),fixturePath],{stdio:'pipe'});
  const fixture=JSON.parse(await readFile(fixturePath,'utf8'));assert(fixture.encodedBytes>8*1024*1024);const fixtureChunks=[],fixtureOps=[],expiryBase=Date.now();
  for(const write of fixture.writes){const bytes=write.kind==='put'?Buffer.from(write.value):Buffer.alloc(0);if(bytes.length)fixtureChunks.push(bytes);fixtureOps.push({key:write.key,kind:write.kind,bytes:bytes.length,...(write.expirationTtl===undefined?{}:{expiresAt:expiryBase+write.expirationTtl*1000}),...(write.metadata?{metadata:write.metadata}:{})});}
  const fixturePayload=Buffer.concat(fixtureChunks), third={...await createJob(),scope:id()};await stage(third,fixturePayload,fixtureOps,revised.scope,'reference',newVersions);assert.equal(await call('commit',{...third,digest:'reference'}),true);assert.equal(await call('head',{}),third.scope);

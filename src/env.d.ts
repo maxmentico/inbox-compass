@@ -3,6 +3,8 @@
 interface Env {
 	/** Linked mailboxes (encrypted refresh tokens), digests, classification cache, OAuth flow state. */
 	MAILBOX_KV: KVNamespace;
+	/** Cloudflare-native approximate rate limit for unauthenticated OAuth starts. */
+	LOGIN_RATE_LIMITER: { limit(options: { key: string }): Promise<{ success: boolean }> };
 	/** Workers AI. Inference runs on Cloudflare; no other AI provider is called. */
 	AI: Ai;
 	/** Private SQLite singleton for job leases, mailbox claims and accepted result references. */
