@@ -8,6 +8,13 @@ export { InboxJobAuthority } from "./job-authority";
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+		// This one POST only renders a shell using the already-validated owner session.
+		// It performs no KV or authority writes; let the browser see progress without
+		// waiting for the atomic bridge's two Durable Object round trips.
+		// Its next POST (/app/run) still goes through the full coordination path.
+		if (request.method === "POST" && new URL(request.url).pathname === "/app/run/prepare") {
+			return app.fetch(request, env, ctx);
+		}
 		const requestAt = Date.now();
 		try {
 			await ensureAtomicBaseline(env);
