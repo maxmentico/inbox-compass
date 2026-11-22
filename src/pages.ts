@@ -2,6 +2,7 @@
 // switch-script.ts), which the CSP allows by its hash. No other script can run.
 
 import { SWITCH_SCRIPT, SWITCH_SCRIPT_HASH } from "./switch-script";
+import { RUN_START_SCRIPT, RUN_START_SCRIPT_HASH } from "./run-start-script";
 
 export function escapeHtml(s: string): string {
 	return s
@@ -15,7 +16,7 @@ export function escapeHtml(s: string): string {
 const SECURITY_HEADERS: Record<string, string> = {
 	"Content-Type": "text/html; charset=utf-8",
 	"Content-Security-Policy":
-		`default-src 'none'; script-src '${SWITCH_SCRIPT_HASH}'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; base-uri 'none'`,
+		`default-src 'none'; script-src '${SWITCH_SCRIPT_HASH}' '${RUN_START_SCRIPT_HASH}'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; base-uri 'none'`,
 	"X-Frame-Options": "DENY",
 	// Not "no-referrer": under it browsers send `Origin: null` on same-site form POSTs, which
 	// checkCsrf rejects. "same-origin" still sends nothing to other sites.
@@ -55,6 +56,7 @@ a.mark:hover{text-decoration:none}
 h1{font-size:26px;line-height:32px;font-weight:400;letter-spacing:-.022em}
 @container oi (min-width:640px){h1{font-size:32px;line-height:38px}}
 .sub{font-size:14px;line-height:20px;color:var(--muted);margin-top:6px}
+.run-start-status{display:block;margin-top:8px;color:var(--muted);font-size:12px;line-height:16px}
 .flash{display:flex;align-items:center;gap:6px;font-size:13px;line-height:18px;color:var(--fg-2);margin-top:20px}
 .flash.warn>svg{color:var(--warn)}
 /* the copy icon on the To action header: 36 px target (44 under 640 px), the status beside it */
@@ -340,6 +342,8 @@ export interface Layout {
 	bar?: string;
 	/** Adds the done-switch script (the one script the CSP allows). Only on a digest page with switches. */
 	script?: boolean;
+	/** Immediate Run now acknowledgement even while its POST awaits job setup. */
+	runStartScript?: boolean;
 }
 
 function docStart(title: string, layout: Layout): string {
@@ -359,7 +363,8 @@ export function page(
 ): Response {
 	const headers = new Headers(SECURITY_HEADERS);
 	for (const c of opts.setCookies ?? []) headers.append("Set-Cookie", c);
-	const script = opts.script ? `<script>${SWITCH_SCRIPT}</script>` : "";
+	const script = (opts.script ? `<script>${SWITCH_SCRIPT}</script>` : "") +
+		(opts.runStartScript ? `<script>${RUN_START_SCRIPT}</script>` : "");
 	return new Response(docStart(title, opts) + bodyHtml + script + DOC_END, { status: opts.status ?? 200, headers });
 }
 
