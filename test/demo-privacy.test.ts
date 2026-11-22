@@ -1,10 +1,9 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import demo from "../demo/index.html?raw";
 
 // The portfolio demo must never use real inboxes or a captured production digest.
 // Restricting addresses to the reserved .invalid name space makes accidental leaks
 // easier to catch in CI. Source names and subject lines still need human review.
-const demo = readFileSync(new URL("../demo/index.html", import.meta.url), "utf8");
 
 describe("synthetic portfolio demo privacy", () => {
   it("contains only reserved fictional mailbox addresses", () => {
