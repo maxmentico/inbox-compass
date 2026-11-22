@@ -1,8 +1,53 @@
-// Runs on the owner's digest page. Immediate submit feedback is important when
-// Cloudflare/Google round trips take time. It never starts jobs itself and does not
-// change form data, navigation, security checks or the server-side run lock.
+// The main Run now action opens a lightweight CSRF-validated page immediately; that page
+// starts the real job asynchronously in the browser and navigates to its persistent progress URL.
+// The standard POST remains authoritative for locks, account snapshots, and persistence.
+
 export const RUN_START_SCRIPT = `(function () {
   "use strict";
+  var preflight = document.getElementById("run-start-form");
+  if (preflight && window.fetch && window.FormData) {
+    var status = document.getElementById("run-start-status");
+    var button = preflight.querySelector('button[type="submit"]');
+    var busy = false;
+    if (button) button.hidden = true;
+
+    function start(event) {
+      if (event) event.preventDefault();
+      if (busy) return;
+      busy = true;
+      if (button) button.hidden = true;
+      if (status) status.textContent = "Starting your mailboxes…";
+      fetch(preflight.action, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        body: new FormData(preflight)
+      }).then(function (res) {
+        var type = res.headers.get("content-type") || "";
+        if (res.redirected || type.indexOf("application/json") !== 0) throw new Error("Your session expired. Reload and sign in.");
+        return res.json().then(function (data) { return { res: res, data: data }; });
+      }).then(function (out) {
+        var url = out.data && out.data.url;
+        if ((out.res.ok || out.res.status === 409) && typeof url === "string" &&
+            url.indexOf("/app/run/") === 0 && url.length === 31 &&
+            /^[A-Za-z0-9_-]{22}$/.test(url.slice(9))) {
+          window.location.replace(url);
+          return;
+        }
+        throw new Error("Could not start the run. Please try again.");
+      }).catch(function (error) {
+        busy = false;
+        if (button) button.hidden = false;
+        if (status) status.textContent = error.message || "Could not start the run. Please try again.";
+      });
+    }
+
+    preflight.addEventListener("submit", start);
+    start();
+    return;
+  }
+
+  // Other forms (including test runs) retain their ordinary POST/redirect flow.
   Array.prototype.forEach.call(document.querySelectorAll('form[action="/app/run"]'), function (form) {
     form.addEventListener("submit", function (event) {
       if (event.defaultPrevented || form.dataset.starting === "1") return;
@@ -21,5 +66,5 @@ export const RUN_START_SCRIPT = `(function () {
   });
 })();`;
 
-/** The only extra script admitted by CSP; a test verifies this matches the text above. */
-export const RUN_START_SCRIPT_HASH = "sha256-I303uaCBZl++8/p1S/Dp4kuy8pIpOzhVe/VWz2Rg0CE=";
+/** Both scripts are admitted by their exact SHA-256 hashes in the CSP. */
+export const RUN_START_SCRIPT_HASH = "sha256-nN1r7CvC3wd6N8P1mOb0KwCFxyM9HBIBg7f4NCCeur8=";
