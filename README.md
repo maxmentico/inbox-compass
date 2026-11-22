@@ -309,6 +309,7 @@ The email carries the action list plus a link to the page.
 - **"Google didn't issue a long-lived token".** Remove the app at myaccount.google.com/connections for that account, then link again.
 - **Everything shows as estimated.** The model was unavailable; the page says why. Error 4006 means the daily free allowance (10,000 neurons) ran out: estimates are re-checked on the first run after it resets, or upgrade to Workers Paid. Otherwise check the model ids (`@cf/...` only).
 - **"Exceeded CPU" in logs.** Lower `DIGEST_MAX_PER_ACCOUNT` or raise `limits.cpu_ms`.
+- **Run now appears to take a long time to start.** On the next deployed version, the button immediately shows **Starting…** while the browser waits for the progress page. In Worker logs, compare `run-submit-total.elapsedMs` (whole POST), `job-start.coordinatorMs/snapshotMs/persistMs` (the job-start phases), and `run-page-ready.planMs/checksMs` (the first progress GET). If the POST is fast but the first page is slow, investigate job-state reads; if the first page is fast but progress takes time, check the per-mailbox `mailbox` and `model` telemetry. A six-mailbox run processes mailboxes sequentially; do not mistake the total scan time for the time to accept the button press.
 
 ## Limitations
 
