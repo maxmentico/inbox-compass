@@ -6,6 +6,7 @@ import { FLOW_COOKIE } from "../src/flow";
 import { DEFAULT_SETTINGS, saveSettings } from "../src/rules";
 import { createSessionCookie, readSession } from "../src/session";
 import { SWITCH_SCRIPT, SWITCH_SCRIPT_HASH } from "../src/switch-script";
+import { RUN_START_SCRIPT, RUN_START_SCRIPT_HASH } from "../src/run-start-script";
 import { assembleBrief, BRIEF_TEXT_CHARS } from "../src/brief";
 import { escapeHtml } from "../src/pages";
 import { app, clock } from "../src/web";
@@ -146,17 +147,32 @@ describe("web app", () => {
 		expect((await get(makeEnv(), "/")).headers.get("Referrer-Policy")).toBe("same-origin");
 	});
 
-	it("the CSP allows only the switch script, by its sha256, and fetches only to this origin", async () => {
+	it("the CSP allows only the two exact hashed scripts and fetches only to this origin", async () => {
 		const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(SWITCH_SCRIPT));
 		const hash = `sha256-${btoa(String.fromCharCode(...new Uint8Array(digest)))}`;
-		expect(SWITCH_SCRIPT_HASH).toBe(hash); // edit the script, update the hash
+		expect(SWITCH_SCRIPT_HASH).toBe(hash);
+		const runDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(RUN_START_SCRIPT));
+		const runHash = `sha256-${btoa(String.fromCharCode(...new Uint8Array(runDigest)))}`;
+		expect(RUN_START_SCRIPT_HASH).toBe(runHash);
 		const csp = (await get(makeEnv(), "/")).headers.get("Content-Security-Policy")!;
 		expect(csp).toBe(
-			`default-src 'none'; script-src '${hash}'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; base-uri 'none'`,
+			`default-src 'none'; script-src '${hash}' '${runHash}'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; base-uri 'none'`,
 		);
 		expect(csp.match(/'unsafe-inline'/g)).toHaveLength(1); // for styles only
 		expect(csp).not.toContain("unsafe-eval");
-		expect(csp.match(/script-src [^;]*/)![0]).toBe(`script-src '${hash}'`);
+		expect(csp.match(/script-src [^;]*/)![0]).toBe(`script-src '${hash}' '${runHash}'`);
+	});
+
+	it("Run now feedback is progressive enhancement and cannot inject email HTML", async () => {
+		for (const bad of ["innerHTML", "outerHTML", "document.write", "eval(", "Function(", "fetch(", "</script"]) {
+			expect(RUN_START_SCRIPT, bad).not.toContain(bad);
+		}
+		const env = makeEnv();
+		const { cookie } = await sessionFor(env);
+		const html = await (await get(env, "/app", cookie)).text();
+		expect(html).toContain('<form method="post" action="/app/run">');
+		expect(html).toContain(`<script>${RUN_START_SCRIPT}</script>`);
+		expect(html).not.toContain(`<script>${SWITCH_SCRIPT}</script>`); // no digest switches yet
 	});
 
 	it("the switch script never writes HTML or evaluates code", () => {
@@ -206,7 +222,7 @@ describe("web app", () => {
 		expect(gmailDone).toBe(true);
 	});
 
-	it("the script is on the latest run's digest page only, and no page has event-handler attributes", async () => {
+	it("only digest pages get Run now feedback, and only latest digests get switches", async () => {
 		const env = makeEnv();
 		const latest = { ...digestFixture(), id: "2026-10-24T06:30:00Z" };
 		const older = { ...digestFixture(), id: "2026-10-23T06:30:00Z" };
@@ -215,8 +231,8 @@ describe("web app", () => {
 		await linkAccount(env, "mentico");
 		const { cookie } = await sessionFor(env);
 		const pages: [string, number][] = [
-			[`/app?run=${encodeURIComponent(latest.id)}`, 1],
-			[`/app?run=${encodeURIComponent(older.id)}`, 0],
+			[`/app?run=${encodeURIComponent(latest.id)}`, 2],
+			[`/app?run=${encodeURIComponent(older.id)}`, 1],
 			["/app/settings", 0],
 			["/app/unlink?alias=mentico", 0],
 			["/app/nope", 0],
@@ -224,7 +240,7 @@ describe("web app", () => {
 		for (const [path, scripts] of pages) {
 			const html = await (await get(env, path, cookie)).text();
 			expect(html.match(/<script/gi) ?? [], path).toHaveLength(scripts);
-			const markup = html.replace(`<script>${SWITCH_SCRIPT}</script>`, "");
+			const markup = html.replace(`<script>${SWITCH_SCRIPT}</script>`, "").replace(`<script>${RUN_START_SCRIPT}</script>`, "");
 			expect(markup, path).not.toMatch(/<[^>]*\son[a-z]+\s*=/i);
 		}
 		expect((await (await get(makeEnv(), "/")).text())).not.toContain("<script");
@@ -495,7 +511,7 @@ describe("web app", () => {
 		expect(ok.headers.get("Set-Cookie")).toContain("__Host-idg-session=v1.");
 	});
 
-	it("renders the digest with every model- and email-derived string escaped, and no script but the switch script", async () => {
+	it("renders hostile email safely and only the two CSP-hashed scripts", async () => {
 		const env = makeEnv();
 		await env.MAILBOX_KV.put("digest:2026-10-24", JSON.stringify(digestFixture()));
 		const { cookie } = await sessionFor(env);
@@ -504,9 +520,10 @@ describe("web app", () => {
 		expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
 		expect(res.headers.get("X-Frame-Options")).toBe("DENY");
 		const html = await res.text();
-		// The one script the CSP allows, exactly once; email content never becomes a script or an image.
-		expect(html.match(/<script/gi)).toHaveLength(1);
+		// Only the two explicitly hashed scripts may execute; email content cannot add a script or image.
+		expect(html.match(/<script/gi)).toHaveLength(2);
 		expect(html).toContain(`<script>${SWITCH_SCRIPT}</script>`);
+		expect(html).toContain(`<script>${RUN_START_SCRIPT}</script>`);
 		expect(html).not.toMatch(/<img/i);
 		expect(html).not.toContain("<b>Pay</b>");
 		expect(html).toContain("&lt;b&gt;Pay&lt;/b&gt; now");
@@ -1117,8 +1134,8 @@ describe("web app", () => {
 			);
 			expect(html).not.toMatch(/<script>alert|<img src=x|href="javascript:|href="https:\/\/evil/i);
 			for (const tag of ["details", "summary", "div", "dl"]) expect(html.match(new RegExp(`<${tag}\\b`, "g"))!.length).toBe(html.match(new RegExp(`</${tag}>`, "g"))!.length);
-			// The page still runs only the one hashed script.
-			expect(html.match(/<script\b/g) ?? []).toHaveLength(1);
+			// Only the two CSP-hashed scripts can run; hostile email text remains inert.
+			expect(html.match(/<script\b/g) ?? []).toHaveLength(2);
 			// Gmail: a quiet link on the folded row, and a button inside the open email; both new tabs.
 			const link = escapeHtml("https://mail.google.com/mail/u/?authuser=mentico%40example.com#all/ta");
 			expect(row).toContain(`<a class="gm" href="${link}" target="_blank" rel="noopener noreferrer" aria-label="Open in Gmail: &lt;/textarea&gt;&lt;script&gt;alert(1)&lt;/script&gt;">Gmail`);

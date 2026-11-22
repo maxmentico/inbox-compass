@@ -712,7 +712,7 @@ ${earlierRunsHtml(runs, digest?.id, view)}
 		// The done-switch script only where there are switches: the latest real run.
 		// The one script (done switches and the copy icon) only where there are switches: the latest real
 		// run. Elsewhere the copy icon is a plain link to the same text.
-		{ bar: ownerBar(session), script: editable },
+		{ bar: ownerBar(session), script: editable, runStartScript: true },
 	);
 });
 
@@ -1089,7 +1089,9 @@ app.get("/app/run/:id", async (c) => {
 	const paused = c.req.query("paused") === "1";
 	const self = jobUrl(id);
 	// The morning run steps its own job: this page only shows it, unless it stalled, when it takes over.
+	const preparedAt = Date.now();
 	const plan = await planStep(c.env, id, { now: clock.now(), observeCron: true, ...(paused ? { observe: true } : {}) });
+	const plannedAt = Date.now();
 	if (plan.kind === "done") {
 		const result = await readResult(c.env.MAILBOX_KV, id);
 		return result ? finishedPage(result, paused) : paused ? goneDetails(plan.digestId) : redirect(digestOf(plan.digestId));
@@ -1099,6 +1101,7 @@ app.get("/app/run/:id", async (c) => {
 	const what = jobWhat(plan.view.job);
 	// One bulk read: when each mailbox was last checked, shown on the rows still to do.
 	const checks: Checks = { at: await lastChecks(c.env.MAILBOX_KV, plan.view.job.aliases), tz: digestConfig(c.env).timeZone, now: clock.now() };
+	log("run-page-ready", { job: id, state: plan.kind, planMs: plannedAt - preparedAt, checksMs: Date.now() - plannedAt });
 	const view = (v: JobView, title: string, below: string, id?: string) => jobPageHtml({ what, finished: v.finished, rows: v.rows, title, below, checks, ...(id ? { id } : {}) });
 	const lede = (text: string) => `<p class="note jlede">${escapeHtml(text)}</p>`;
 	if (plan.kind === "stopped") return page("Building digest", view(plan.view, "This run was stopped", `${lede(STOPPED_LEDE)}${STOPPED_ACTIONS}`), opts);

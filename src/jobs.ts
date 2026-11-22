@@ -198,6 +198,7 @@ export async function readJobLock(env: JobEnv): Promise<LockHolder | null> {
  * holder, if another run has it). Nothing else is written but the job itself.
  */
 export async function startJob(env: JobEnv, opts: RunOptions, now: Date, driver: Job["driver"]): Promise<Job> {
+	const startupAt = Date.now();
 	const kv = env.MAILBOX_KV;
 	const test = isTestRun(opts);
 	const id = randomToken(16);
@@ -223,10 +224,12 @@ export async function startJob(env: JobEnv, opts: RunOptions, now: Date, driver:
 			if (held) throw new RunInProgressError(lockMessage(held), held);
 		}
 	}
+	const acquiredAt = Date.now();
 	try {
 		// Kept during the transition so an in-flight previous Worker version also sees the run.
 		if (!test) await takeLock(kv, { at: now.toISOString(), job: id, driver });
 		const [accounts, previous] = await Promise.all([listAccounts(kv), latestRealRun(kv)]);
+		const snapshotAt = Date.now();
 		if (authority && accounts.length > 63) throw new Error("At most 63 mailboxes can be coordinated in one run.");
 		const job: Job = {
 			id,
@@ -243,7 +246,10 @@ export async function startJob(env: JobEnv, opts: RunOptions, now: Date, driver:
 			createdAt: Date.now(),
 		};
 		await kv.put(jobKey(id), JSON.stringify(job), { expirationTtl: JOB_TTL });
-		log("job-start", { job: id, run: job.run, test, driver, mailboxes: job.aliases.length });
+		const persistedAt = Date.now();
+		log("job-start", { job: id, run: job.run, test, driver, mailboxes: job.aliases.length,
+			startupMs: persistedAt - startupAt, coordinatorMs: acquiredAt - startupAt,
+			snapshotMs: snapshotAt - acquiredAt, persistMs: persistedAt - snapshotAt });
 		return job;
 	} catch (error) {
 		if (!test) {
