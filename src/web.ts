@@ -712,7 +712,7 @@ ${earlierRunsHtml(runs, digest?.id, view)}
 		// The done-switch script only where there are switches: the latest real run.
 		// The one script (done switches and the copy icon) only where there are switches: the latest real
 		// run. Elsewhere the copy icon is a plain link to the same text.
-		{ bar: ownerBar(session), script: editable },
+		{ bar: ownerBar(session), script: editable, runStartScript: true },
 	);
 });
 
