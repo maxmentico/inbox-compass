@@ -42,8 +42,8 @@
 		// Retried for whatever the primary fails on. "none" to disable.
 		"DIGEST_FALLBACK_MODEL": "@cf/google/gemma-4-26b-a4b-it",
 		"DIGEST_TIMEZONE": "Europe/London",
-		// Bridge is KV-compatible until a verified SQLite head exists; after cutover it follows that head.
-		"ATOMIC_STATE_MODE": "active",
+		// Keep KV authoritative until a verified SQLite head exists; the bridge follows that head after cutover.
+		"ATOMIC_STATE_MODE": "bridge",
 		"DIGEST_EMAIL_FROM": "",
 		"DIGEST_EMAIL_TO": ""
 	},
