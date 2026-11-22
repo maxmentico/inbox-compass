@@ -164,13 +164,17 @@ describe("web app", () => {
 	});
 
 	it("Run now feedback is progressive enhancement and cannot inject email HTML", async () => {
-		for (const bad of ["innerHTML", "outerHTML", "document.write", "eval(", "Function(", "fetch(", "</script"]) {
+		for (const bad of ["innerHTML", "outerHTML", "document.write", "eval(", "Function(", "</script"]) {
 			expect(RUN_START_SCRIPT, bad).not.toContain(bad);
 		}
+		expect(() => new Function(RUN_START_SCRIPT)).not.toThrow();
+		expect(RUN_START_SCRIPT).toContain("fetch(preflight.action, {");
+		expect(RUN_START_SCRIPT).toContain('credentials: "same-origin"');
+		expect(RUN_START_SCRIPT).toContain('headers: { Accept: "application/json" }');
 		const env = makeEnv();
 		const { cookie } = await sessionFor(env);
 		const html = await (await get(env, "/app", cookie)).text();
-		expect(html).toContain('<form method="post" action="/app/run">');
+		expect(html).toContain('<form method="post" action="/app/run/prepare">');
 		expect(html).toContain(`<script>${RUN_START_SCRIPT}</script>`);
 		expect(html).not.toContain(`<script>${SWITCH_SCRIPT}</script>`); // no digest switches yet
 	});
@@ -314,6 +318,45 @@ describe("web app", () => {
 			ctx,
 		);
 		expect(await r.json()).toEqual({ ok: true, done: true, gmail: "skipped" });
+	});
+
+	it("Run now immediately renders an authenticated, CSRF-protected staging page without allocating a job", async () => {
+		const env = makeEnv();
+		const { cookie, csrf } = await sessionFor(env);
+		const before = env.MAILBOX_KV.ops;
+		const form = post(env, "/app/run/prepare", [["csrf", csrf]], cookie);
+		const res = await form;
+		expect(res.status).toBe(200);
+		expect(env.MAILBOX_KV.ops).toBe(before);
+		expect(env.MAILBOX_KV.store.has("run-lock")).toBe(false);
+		const html = await res.text();
+		expect(html).toContain("Building your digest");
+		expect(html).toContain('id="run-start-status"');
+		expect(html).toContain('<form id="run-start-form" method="post" action="/app/run"');
+		expect(html).toContain(`<script>${RUN_START_SCRIPT}</script>`);
+		expect(html).toContain(`name="csrf" value="${csrf}"`);
+		expect((await post(env, "/app/run/prepare", [], cookie)).status).toBe(403);
+		expect((await post(env, "/app/run/prepare", [["csrf", csrf]], cookie, "https://evil.example")).status).toBe(403);
+		expect((await post(env, "/app/run/prepare", [["csrf", csrf]])).status).toBe(303);
+	});
+
+	it("the asynchronous Run now request returns a safe same-origin job URL and can reuse an existing run", async () => {
+		const env = makeEnv();
+		const { cookie, csrf } = await sessionFor(env);
+		const run = () => app.fetch(new Request(ORIGIN + "/app/run", {
+			method: "POST", headers: { Cookie: cookie, Origin: ORIGIN, Accept: "application/json",
+				"Content-Type": "application/x-www-form-urlencoded" },
+			body: new URLSearchParams([["csrf", csrf]]),
+		}), env, ctx);
+		const one = await run();
+		expect(one.status).toBe(200);
+		expect(one.headers.get("Cache-Control")).toBe("no-store");
+		const started = await one.json() as { ok: boolean; url: string };
+		expect(started.ok).toBe(true);
+		expect(started.url).toMatch(/^\\/app\\/run\\/[A-Za-z0-9_-]{22}$/);
+		const second = await run();
+		expect(second.status).toBe(409);
+		expect(await second.json()).toEqual({ ok: false, code: "in_progress", url: started.url });
 	});
 
 	it("Run now starts a job and goes to its page, which steps it and refreshes to the new digest, script-free", async () => {
