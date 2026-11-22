@@ -87,6 +87,36 @@ describe("web app", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("rate limits login before creating OAuth state and never trusts forwarded-for", async () => {
+		const env = makeEnv();
+		const keys: string[] = [];
+		let calls = 0;
+		env.LOGIN_RATE_LIMITER = {
+			limit: async ({ key }) => {
+				keys.push(key);
+				return { success: ++calls <= 2 };
+			},
+		};
+		const req = (ip?: string) => app.fetch(new Request(ORIGIN + "/login", {
+			headers: { ...(ip ? { "CF-Connecting-IP": ip } : {}), "X-Forwarded-For": "attacker.example" },
+		}), env, ctx);
+		const before = env.MAILBOX_KV.ops;
+		const first = await req("192.0.2.40");
+		const second = await req("192.0.2.40");
+		const allowedWrites = env.MAILBOX_KV.ops - before;
+		expect(first.status).toBe(303);
+		expect(second.status).toBe(303);
+		expect(allowedWrites).toBe(2);
+		const denied = await req("192.0.2.40");
+		expect(denied.status).toBe(429);
+		expect(denied.headers.get("Retry-After")).toBe("60");
+		expect(denied.headers.get("Cache-Control")).toBe("no-store");
+		expect(denied.headers.get("Set-Cookie")).toBeNull();
+		expect(env.MAILBOX_KV.ops - before).toBe(allowedWrites);
+		await req();
+		expect(keys).toEqual(["login:192.0.2.40", "login:192.0.2.40", "login:192.0.2.40", "login:unknown"]);
+	});
+
 	it("requires a session for /app and redirects signed-in users from /", async () => {
 		const env = makeEnv();
 		const anon = await get(env, "/app");
