@@ -222,7 +222,7 @@ describe("web app", () => {
 		expect(gmailDone).toBe(true);
 	});
 
-	it("the script is on the latest run's digest page only, and no page has event-handler attributes", async () => {
+	it("only digest pages get Run now feedback, and only latest digests get switches", async () => {
 		const env = makeEnv();
 		const latest = { ...digestFixture(), id: "2026-10-24T06:30:00Z" };
 		const older = { ...digestFixture(), id: "2026-10-23T06:30:00Z" };
@@ -231,8 +231,8 @@ describe("web app", () => {
 		await linkAccount(env, "mentico");
 		const { cookie } = await sessionFor(env);
 		const pages: [string, number][] = [
-			[`/app?run=${encodeURIComponent(latest.id)}`, 1],
-			[`/app?run=${encodeURIComponent(older.id)}`, 0],
+			[`/app?run=${encodeURIComponent(latest.id)}`, 2],
+			[`/app?run=${encodeURIComponent(older.id)}`, 1],
 			["/app/settings", 0],
 			["/app/unlink?alias=mentico", 0],
 			["/app/nope", 0],
@@ -240,7 +240,7 @@ describe("web app", () => {
 		for (const [path, scripts] of pages) {
 			const html = await (await get(env, path, cookie)).text();
 			expect(html.match(/<script/gi) ?? [], path).toHaveLength(scripts);
-			const markup = html.replace(`<script>${SWITCH_SCRIPT}</script>`, "");
+			const markup = html.replace(`<script>${SWITCH_SCRIPT}</script>`, "").replace(`<script>${RUN_START_SCRIPT}</script>`, "");
 			expect(markup, path).not.toMatch(/<[^>]*\son[a-z]+\s*=/i);
 		}
 		expect((await (await get(makeEnv(), "/")).text())).not.toContain("<script");
@@ -1134,8 +1134,8 @@ describe("web app", () => {
 			);
 			expect(html).not.toMatch(/<script>alert|<img src=x|href="javascript:|href="https:\/\/evil/i);
 			for (const tag of ["details", "summary", "div", "dl"]) expect(html.match(new RegExp(`<${tag}\\b`, "g"))!.length).toBe(html.match(new RegExp(`</${tag}>`, "g"))!.length);
-			// The page still runs only the one hashed script.
-			expect(html.match(/<script\b/g) ?? []).toHaveLength(1);
+			// Only the two CSP-hashed scripts can run; hostile email text remains inert.
+			expect(html.match(/<script\b/g) ?? []).toHaveLength(2);
 			// Gmail: a quiet link on the folded row, and a button inside the open email; both new tabs.
 			const link = escapeHtml("https://mail.google.com/mail/u/?authuser=mentico%40example.com#all/ta");
 			expect(row).toContain(`<a class="gm" href="${link}" target="_blank" rel="noopener noreferrer" aria-label="Open in Gmail: &lt;/textarea&gt;&lt;script&gt;alert(1)&lt;/script&gt;">Gmail`);
