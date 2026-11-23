@@ -9,7 +9,7 @@
 		"type": "git",
 		"url": "git+https://github.com/maxmentico/inbox-compass.git"
 	},
-	"homepage": "https://github.com/maxmentico/inbox-compass#readme",
+	"homepage": "https://maxmentico.github.io/inbox-compass/",
 	"bugs": "https://github.com/maxmentico/inbox-compass/issues",
 	"engines": {
 		"node": ">=20"
